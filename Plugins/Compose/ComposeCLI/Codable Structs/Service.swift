@@ -23,10 +23,9 @@
 
 import Foundation
 
-
 /// Represents a single service definition within the `services` section.
 struct Service: Codable, Hashable {
-    /// Docker image name
+    /// Container image name
     let image: String?
 
     /// Build configuration if the service is built from a Dockerfile
@@ -97,14 +96,14 @@ struct Service: Codable, Hashable {
 
     /// Allocate a pseudo-TTY (-t flag for `container run`)
     let tty: Bool?
-    
+
     /// Other services that depend on this service
     var dependedBy: [String] = []
-    
+
     // Defines custom coding keys to map YAML keys to Swift properties
     enum CodingKeys: String, CodingKey {
         case image, build, deploy, restart, healthcheck, volumes, environment, env_file, ports, command, depends_on, user,
-             container_name, networks, hostname, entrypoint, privileged, read_only, working_dir, configs, secrets, stdin_open, tty, platform
+            container_name, networks, hostname, entrypoint, privileged, read_only, working_dir, configs, secrets, stdin_open, tty, platform
     }
 
     /// Custom initializer to handle decoding and basic validation.
@@ -113,7 +112,7 @@ struct Service: Codable, Hashable {
         image = try container.decodeIfPresent(String.self, forKey: .image)
         build = try container.decodeIfPresent(Build.self, forKey: .build)
         deploy = try container.decodeIfPresent(Deploy.self, forKey: .deploy)
-        
+
         // Ensure that a service has either an image or a build context.
         guard image != nil || build != nil else {
             throw DecodingError.dataCorruptedError(forKey: .image, in: container, debugDescription: "Service must have either 'image' or 'build' specified.")
@@ -134,7 +133,7 @@ struct Service: Codable, Hashable {
         } else {
             command = nil
         }
-        
+
         if let dependsOnString = try? container.decodeIfPresent(String.self, forKey: .depends_on) {
             depends_on = [dependsOnString]
         } else {
@@ -145,7 +144,7 @@ struct Service: Codable, Hashable {
         container_name = try container.decodeIfPresent(String.self, forKey: .container_name)
         networks = try container.decodeIfPresent([String].self, forKey: .networks)
         hostname = try container.decodeIfPresent(String.self, forKey: .hostname)
-        
+
         // Decode 'entrypoint' which can be either a single string or an array of strings.
         if let entrypointArray = try? container.decodeIfPresent([String].self, forKey: .entrypoint) {
             entrypoint = entrypointArray
@@ -164,12 +163,12 @@ struct Service: Codable, Hashable {
         tty = try container.decodeIfPresent(Bool.self, forKey: .tty)
         platform = try container.decodeIfPresent(String.self, forKey: .platform)
     }
-    
+
     /// Returns the services in topological order based on `depends_on` relationships.
     static func topoSortConfiguredServices(
         _ services: [(serviceName: String, service: Service)]
     ) throws -> [(serviceName: String, service: Service)] {
-        
+
         var visited = Set<String>()
         var visiting = Set<String>()
         var sorted: [(String, Service)] = []
@@ -179,11 +178,13 @@ struct Service: Codable, Hashable {
             if let service {
                 serviceTuple.service.dependedBy.append(service)
             }
-            
+
             if visiting.contains(name) {
-                throw NSError(domain: "ComposeError", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey: "Cyclic dependency detected involving '\(name)'"
-                ])
+                throw NSError(
+                    domain: "ComposeError", code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Cyclic dependency detected involving '\(name)'"
+                    ])
             }
             guard !visited.contains(name) else { return }
 

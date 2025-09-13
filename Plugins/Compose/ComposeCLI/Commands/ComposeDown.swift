@@ -43,7 +43,7 @@ public struct ComposeDown: AsyncParsableCommand {
 
     private var cwd: String { process.cwd ?? FileManager.default.currentDirectoryPath }
 
-    @Option(name: [.customShort("f"), .customLong("file")], help: "The path to your Docker Compose file")
+    @Option(name: [.customShort("f"), .customLong("file")], help: "The path to your Compose file")
     var composeFilename: String = "compose.yml"
     private var composePath: String { "\(cwd)/\(composeFilename)" }  // Path to compose.yml
 
@@ -66,7 +66,7 @@ public struct ComposeDown: AsyncParsableCommand {
             }
         }
 
-        // Read docker-compose.yml content
+        // Read compose.yml content
         guard let yamlData = fileManager.contents(atPath: composePath) else {
             let path = URL(fileURLWithPath: composePath)
                 .deletingLastPathComponent()
@@ -74,23 +74,23 @@ public struct ComposeDown: AsyncParsableCommand {
             throw YamlError.composeFileNotFound(path)
         }
 
-        // Decode the YAML file into the DockerCompose struct
-        let dockerComposeString = String(data: yamlData, encoding: .utf8)!
-        let dockerCompose = try YAMLDecoder().decode(DockerCompose.self, from: dockerComposeString)
+        // Decode the YAML file into the Compose struct
+        let composeString = String(data: yamlData, encoding: .utf8)!
+        let compose = try YAMLDecoder().decode(Compose.self, from: composeString)
 
         // Determine project name for container naming
-        if let name = dockerCompose.name {
+        if let name = compose.name {
             projectName = name
-            print("Info: Docker Compose project name parsed as: \(name)")
+            print("Info: Compose project name parsed as: \(name)")
             print(
                 "Note: The 'name' field currently only affects container naming (e.g., '\(name)-serviceName'). Full project-level isolation for other resources (networks, implicit volumes) is not implemented by this tool."
             )
         } else {
             projectName = URL(fileURLWithPath: cwd).lastPathComponent  // Default to directory name
-            print("Info: No 'name' field found in docker-compose.yml. Using directory name as project name: \(projectName ?? "")")
+            print("Info: No 'name' field found in compose.yml. Using directory name as project name: \(projectName ?? "")")
         }
 
-        var services: [(serviceName: String, service: Service)] = dockerCompose.services.map({ ($0, $1) })
+        var services: [(serviceName: String, service: Service)] = compose.services.map({ ($0, $1) })
         services = try Service.topoSortConfiguredServices(services)
 
         // Filter for specified services

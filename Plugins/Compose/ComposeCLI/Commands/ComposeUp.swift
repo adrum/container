@@ -45,7 +45,7 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         help: "Detatches from container logs. Note: If you do NOT detatch, killing this process will NOT kill the container. To kill the container, run container-compose down")
     var detatch: Bool = false
 
-    @Option(name: [.customShort("f"), .customLong("file")], help: "The path to your Docker Compose file")
+    @Option(name: [.customShort("f"), .customLong("file")], help: "The path to your Compose file")
     var composeFilename: String = "compose.yml"
     private var composePath: String { "\(cwd)/\(composeFilename)" }  // Path to compose.yml
 
@@ -97,33 +97,33 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
             throw YamlError.composeFileNotFound(path)
         }
 
-        // Decode the YAML file into the DockerCompose struct
-        let dockerComposeString = String(data: yamlData, encoding: .utf8)!
-        let dockerCompose = try YAMLDecoder().decode(DockerCompose.self, from: dockerComposeString)
+        // Decode the YAML file into the Compose struct
+        let composeString = String(data: yamlData, encoding: .utf8)!
+        let compose = try YAMLDecoder().decode(Compose.self, from: composeString)
 
         // Load environment variables from .env file
         environmentVariables = loadEnvFile(path: envFilePath)
 
         // Handle 'version' field
-        if let version = dockerCompose.version {
-            print("Info: Docker Compose file version parsed as: \(version)")
-            print("Note: The 'version' field influences how a Docker Compose CLI interprets the file, but this custom 'container-compose' tool directly interprets the schema.")
+        if let version = compose.version {
+            print("Info: Compose file version parsed as: \(version)")
+            print("Note: The 'version' field influences how a Compose CLI interprets the file, but this custom 'container-compose' tool directly interprets the schema.")
         }
 
         // Determine project name for container naming
-        if let name = dockerCompose.name {
+        if let name = compose.name {
             projectName = name
-            print("Info: Docker Compose project name parsed as: \(name)")
+            print("Info: Compose project name parsed as: \(name)")
             print(
                 "Note: The 'name' field currently only affects container naming (e.g., '\(name)-serviceName'). Full project-level isolation for other resources (networks, implicit volumes) is not implemented by this tool."
             )
         } else {
             projectName = URL(fileURLWithPath: cwd).lastPathComponent  // Default to directory name
-            print("Info: No 'name' field found in docker-compose.yml. Using directory name as project name: \(projectName ?? "")")
+            print("Info: No 'name' field found in compose.yml. Using directory name as project name: \(projectName ?? "")")
         }
 
         // Get Services to use
-        var services: [(serviceName: String, service: Service)] = dockerCompose.services.map({ ($0, $1) })
+        var services: [(serviceName: String, service: Service)] = compose.services.map({ ($0, $1) })
         services = try Service.topoSortConfiguredServices(services)
 
         // Filter for specified services
@@ -137,8 +137,8 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         try await stopOldStuff(services.map({ $0.serviceName }), remove: true)
 
         // Process top-level networks
-        // This creates named networks defined in the docker-compose.yml
-        if let networks = dockerCompose.networks {
+        // This creates named networks defined in the compose.yml
+        if let networks = compose.networks {
             print("\n--- Processing Networks ---")
             for (networkName, networkConfig) in networks {
                 try await setupNetwork(name: networkName, config: networkConfig)
@@ -147,8 +147,8 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         }
 
         // Process top-level volumes
-        // This creates named volumes defined in the docker-compose.yml
-        if let volumes = dockerCompose.volumes {
+        // This creates named volumes defined in the compose.yml
+        if let volumes = compose.volumes {
             print("\n--- Processing Volumes ---")
             for (volumeName, volumeConfig) in volumes {
                 await createVolumeHardLink(name: volumeName, config: volumeConfig)
@@ -156,12 +156,12 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
             print("--- Volumes Processed ---\n")
         }
 
-        // Process each service defined in the docker-compose.yml
+        // Process each service defined in the compose.yml
         print("\n--- Processing Services ---")
 
         print(services.map(\.serviceName))
         for (serviceName, service) in services {
-            try await configService(service, serviceName: serviceName, from: dockerCompose)
+            try await configService(service, serviceName: serviceName, from: compose)
         }
 
         if !detatch {
@@ -268,7 +268,7 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         } else {
             var networkCreateArgs: [String] = ["network", "create"]
 
-            #warning("Docker Compose Network Options Not Supported")
+            #warning("Compose Network Options Not Supported")
             // Add driver and driver options
             if let driver = networkConfig.driver, !driver.isEmpty {
                 //                    networkCreateArgs.append("--driver")
@@ -321,7 +321,7 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
     }
 
     // MARK: Compose Service Level Functions
-    private mutating func configService(_ service: Service, serviceName: String, from dockerCompose: DockerCompose) async throws {
+    private mutating func configService(_ service: Service, serviceName: String, from compose: Compose) async throws {
         guard let projectName else { throw ComposeError.invalidProjectName }
 
         var imageToRun: String
@@ -440,12 +440,12 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
             for network in serviceNetworks {
                 let resolvedNetwork = resolveVariable(network, with: environmentVariables)
                 // Use the explicit network name from top-level definition if available, otherwise resolved name
-                let networkToConnect = dockerCompose.networks?[network]?.name ?? resolvedNetwork
+                let networkToConnect = compose.networks?[network]?.name ?? resolvedNetwork
                 runCommandArgs.append("--network")
                 runCommandArgs.append(networkToConnect)
             }
             print(
-                "Info: Service '\(serviceName)' is configured to connect to networks: \(serviceNetworks.joined(separator: ", ")) ascertained from networks attribute in docker-compose.yml."
+                "Info: Service '\(serviceName)' is configured to connect to networks: \(serviceNetworks.joined(separator: ", ")) ascertained from networks attribute in compose.yml."
             )
             print(
                 "Note: This tool assumes custom networks are defined at the top-level 'networks' key or are pre-existing. This tool does not create implicit networks for services if not explicitly defined at the top-level."
@@ -481,7 +481,7 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         // Handle service-level configs (note: still only parsing/logging, not attaching)
         if let serviceConfigs = service.configs {
             print(
-                "Note: Service '\(serviceName)' defines 'configs'. Docker Compose 'configs' are primarily used for Docker Swarm deployed stacks and are not directly translatable to 'container run' commands."
+                "Note: Service '\(serviceName)' defines 'configs'. Compose 'configs' are primarily used for Docker Swarm deployed stacks and are not directly translatable to 'container run' commands."
             )
             print("This tool will parse 'configs' definitions but will not create or attach them to containers during 'container run'.")
             for serviceConfig in serviceConfigs {
@@ -494,7 +494,7 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         // Handle service-level secrets (note: still only parsing/logging, not attaching)
         if let serviceSecrets = service.secrets {
             print(
-                "Note: Service '\(serviceName)' defines 'secrets'. Docker Compose 'secrets' are primarily used for Docker Swarm deployed stacks and are not directly translatable to 'container run' commands."
+                "Note: Service '\(serviceName)' defines 'secrets'. Compose 'secrets' are primarily used for Docker Swarm deployed stacks and are not directly translatable to 'container run' commands."
             )
             print("This tool will parse 'secrets' definitions but will not create or attach them to containers during 'container run'.")
             for serviceSecret in serviceSecrets {
@@ -574,7 +574,7 @@ public struct ComposeUp: AsyncParsableCommand, @unchecked Sendable {
         try await imagePull.run()
     }
 
-    /// Builds Docker Service
+    /// Builds Container Service
     ///
     /// - Parameters:
     ///   - buildConfig: The configuration for the build
